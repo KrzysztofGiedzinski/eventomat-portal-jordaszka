@@ -72,6 +72,7 @@
   .historia > summary::before { content: "▸"; transition: transform .15s; color: var(--line-strong); }
   .historia[open] > summary::before { transform: rotate(90deg); }
   .historia .hist-count { background: var(--line); color: var(--ink-soft); border-radius: 999px; padding: 1px 10px; font-size: 12px; font-weight: 600; }
+  .historia .hist-hint { font-size: 12.5px; color: var(--ink-soft); padding: 0 4px 10px; }
   /* wpis w Historii domknięty do jednej linii; klik rozwija pełną kartę */
   .hist-item { border-top: 1px solid var(--line); }
   .hist-item > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px; padding: 12px 4px; font-size: 14px; }
@@ -102,6 +103,7 @@
   textarea { min-height: 72px; }
   textarea:focus, input[type=text]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .uwagi label { display: block; font-size: 12.5px; color: var(--ink-soft); margin-bottom: 7px; }
+  .field .dopisz { margin-top: 10px; min-height: 60px; }
 
   .btn { font-family: inherit; font-size: 14px; font-weight: 500; cursor: pointer; border-radius: 10px; padding: 10px 18px; border: 1px solid var(--ink); background: var(--ink); color: #fff; transition: opacity .12s; }
   .btn:hover { opacity: .9; }
@@ -266,7 +268,7 @@ function renderCard(msg, answers, delay) {
     (msg.body ? `<p class="q-intro">${esc(msg.body)}</p>` : '') +
     (msg.rec ? `<div class="rec"><b>Moja propozycja</b>${esc(msg.rec)}</div>` : '');
   if ((msg.fields || []).length) {
-    msg.fields.forEach(f => el.appendChild(renderField(f, answers[f.key])));
+    msg.fields.forEach(f => el.appendChild(renderField(f, answers)));
   } else if (msg.kind === 'komunikat') {
     el.appendChild(renderAck(msg.id, answers['ack_' + msg.id]));
   }
@@ -306,6 +308,9 @@ function renderPortal(feed, answers) {
     const sum = document.createElement('summary');
     sum.innerHTML = `Historia — załatwione <span class="hist-count">${history.length}</span>`;
     det.appendChild(sum);
+    const hint = document.createElement('p'); hint.className = 'hist-hint';
+    hint.textContent = 'Kliknij wpis, żeby go rozwinąć i zmienić odpowiedź — zapisze się sama.';
+    det.appendChild(hint);
     history.forEach(msg => {
       const item = document.createElement('details'); item.className = 'hist-item k-' + msg.kind;
       const s = document.createElement('summary');
@@ -337,19 +342,29 @@ function renderAck(id, acked) {
   return wrap;
 }
 
-function renderField(f, savedVal) {
+function renderField(f, answers) {
+  const savedVal = answers[f.key];
   const wrap = document.createElement('div'); wrap.className = 'field';
   if (f.type === 'radio') {
     const lab = document.createElement('label'); lab.className = 'flabel'; lab.textContent = f.label; wrap.appendChild(lab);
     const opts = document.createElement('div'); opts.className = 'opts';
+    // pole „dopisz" — odsłaniane, gdy wybrana opcja prosi o dopisanie (np. „Mam uwagi (dopisz)")
+    const noteKey = f.key + '_dopisz';
+    const note = document.createElement('textarea'); note.className = 'dopisz'; note.placeholder = 'Dopisz tutaj…';
+    if (answers[noteKey]) note.value = answers[noteKey];
+    note.addEventListener('input', () => queueSave(noteKey, note.value));
+    const needsNote = o => /dopisz/i.test(o || '');
+    const syncNote = sel => { note.style.display = needsNote(sel) ? 'block' : 'none'; };
     f.options.forEach(o => {
       const l = document.createElement('label'); l.className = 'opt'; if (savedVal === o) l.classList.add('checked');
       const inp = document.createElement('input'); inp.type = 'radio'; inp.name = f.key; if (savedVal === o) inp.checked = true;
       l.appendChild(inp); l.appendChild(document.createTextNode(o));
-      inp.addEventListener('change', () => { opts.querySelectorAll('.opt').forEach(x => x.classList.remove('checked')); l.classList.add('checked'); queueSave(f.key, o); });
+      inp.addEventListener('change', () => { opts.querySelectorAll('.opt').forEach(x => x.classList.remove('checked')); l.classList.add('checked'); queueSave(f.key, o); syncNote(o); });
       opts.appendChild(l);
     });
     wrap.appendChild(opts);
+    wrap.appendChild(note);
+    syncNote(savedVal);
   } else {
     wrap.classList.add('uwagi');
     const lab = document.createElement('label'); lab.textContent = f.label; wrap.appendChild(lab);
