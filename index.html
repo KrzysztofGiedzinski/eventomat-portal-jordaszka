@@ -50,9 +50,10 @@
   .section-head p { font-size: 13.5px; color: var(--ink-soft); }
 
   .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
-    padding: 24px 24px 22px; margin-bottom: 16px; opacity: 0; transform: translateY(10px);
-    animation: rise .5s cubic-bezier(.2,.7,.2,1) forwards; }
-  @keyframes rise { to { opacity: 1; transform: none; } }
+    padding: 24px 24px 22px; margin-bottom: 16px;
+    animation: rise .5s cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .card { animation: none; } }
   /* tła wg typu wpisu */
   .card.k-komunikat { border-left: 3px solid var(--info);   background: #f6fafb; }
   .card.k-postep    { border-left: 3px solid var(--accent);  background: #f8faf1; }
