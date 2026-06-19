@@ -446,14 +446,27 @@ async function renderAdmin() {
   document.getElementById('page-lede').innerHTML = 'Podgląd na żywo: odpowiedzi, potwierdzenia i wiadomości od Jordanów.';
   document.getElementById('page-footer').textContent = 'Widok administratora';
 
-  const [feedR, ansR, inbR] = await Promise.all([
+  const [feedR, ansR, inbR, visR] = await Promise.all([
     sb.rpc('get_portal_feed', { p_token: adminToken }),
     sb.rpc('get_workshop_answers', { p_token: adminToken }),
     sb.rpc('get_portal_inbound', { p_token: adminToken }),
+    sb.rpc('get_portal_visits', { p_token: adminToken }),
   ]);
   if (feedR.error || ansR.error) { root.innerHTML = `<div class="toast-error">Błąd odczytu: ${esc((feedR.error||ansR.error).message)}</div>`; return; }
   const ans = {}; (ansR.data || []).forEach(r => ans[r.question_key] = r);
   root.innerHTML = '';
+
+  // wizyty na portalu (kto był i jak długo)
+  const visits = visR && !visR.error ? (visR.data || []) : [];
+  const vbox = document.createElement('section'); vbox.className = 'card';
+  vbox.innerHTML = `<div class="kicker k">Aktywność</div><div class="q-title">Wizyty na portalu</div>`;
+  if (!visits.length) vbox.innerHTML += `<p class="q-intro">— jeszcze nikt nie wszedł —</p>`;
+  visits.forEach(v => {
+    const d = document.createElement('div'); d.className = 'admin-row';
+    d.innerHTML = `<div><div class="a">${fmtWhen(v.opened_at)}</div><div class="k" style="margin-top:4px">na portalu ${fmtDur(v.seconds)} · ostatnio ${fmtWhen(v.last_seen_at)}</div></div><span class="badge done">wizyta</span>`;
+    vbox.appendChild(d);
+  });
+  root.appendChild(vbox);
 
   // wiadomości od klienta
   const inbox = document.createElement('section'); inbox.className = 'card';
@@ -487,8 +500,18 @@ async function renderAdmin() {
 // ── Narzędzia ────────────────────────────────────────────────────────────────
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function fmtWhen(iso) { try { return new Date(iso).toLocaleString('pl-PL', { dateStyle:'short', timeStyle:'short' }); } catch { return ''; } }
+function fmtDur(s) { s = Math.max(0, s || 0); if (s < 60) return s + ' s'; return Math.round(s / 60) + ' min'; }
 
 // ── Start ──────────────────────────────────────────────────────────────────────
+// ── Śledzenie wizyt (kiedy i jak długo na portalu) ──
+let visitId = null;
+async function trackVisit() {
+  try {
+    const { data, error } = await sb.rpc('track_visit', { p_token: RESPONDENT, p_visit_id: visitId });
+    if (!error && data != null) visitId = data;
+  } catch (e) { /* offline — pomijamy */ }
+}
+
 async function startClient() {
   const feedR = await sb.rpc('get_portal_feed', { p_token: RESPONDENT });
   if (feedR.error) { root.innerHTML = `<div class="toast-error">Nie udało się wczytać portalu: ${esc(feedR.error.message)}</div>`; return; }
@@ -497,6 +520,9 @@ async function startClient() {
   if (!ansR.error) (ansR.data || []).forEach(r => answers[r.question_key] = r.answer);
   Object.entries(answers).forEach(([k, v]) => lsSave(k, v));
   renderPortal(feedR.data || [], answers);
+  trackVisit();                                                                              // start wizyty
+  setInterval(() => { if (document.visibilityState === 'visible') trackVisit(); }, 30000);   // puls co 30 s
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') trackVisit(); });
 }
 
 if (isAdmin) renderAdmin(); else startClient();
