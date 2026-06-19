@@ -65,6 +65,15 @@
   .kicker.uwaga     { color: #b5731f; }
 
   .all-done { text-align: center; color: var(--ink-soft); font-size: 15px; padding: 22px 0 8px; }
+  /* pasek postępu odpowiedzi */
+  .progress { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 15px 18px; margin: 6px 0 4px; box-shadow: var(--shadow); }
+  .progress .ptop { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; color: var(--ink-soft); }
+  .progress .ptop .pcount { font-weight: 600; color: var(--ink); }
+  .progress .pbar { height: 8px; border-radius: 999px; background: var(--line); margin-top: 11px; overflow: hidden; }
+  .progress .pfill { height: 100%; background: var(--accent); border-radius: 999px; transition: width .45s cubic-bezier(.2,.7,.2,1); }
+  .progress.done { background: var(--accent-soft); border-color: var(--accent-border); }
+  .progress.done .pdone-title { font-weight: 700; font-size: 16px; color: var(--accent-deep); }
+  .progress.done .pdone-sub { font-size: 14px; color: #43491f; margin-top: 5px; }
   /* Historia — załatwione, zwinięte */
   .historia { margin-top: 40px; border-top: 1px solid var(--line); }
   .historia > summary { cursor: pointer; list-style: none; padding: 16px 4px; font-size: 14px; font-weight: 600; color: var(--ink-soft); display: flex; align-items: center; gap: 9px; }
@@ -235,6 +244,7 @@ function sentPush(o) { const a = sentLoad(); a.unshift(o); localStorage.setItem(
 const timers = {};
 function queueSave(key, value) {
   lsSave(key, value);
+  paintProgress();
   clearTimeout(timers[key]);
   showPill('saving', 'Zapisywanie…');
   timers[key] = setTimeout(() => save(key, value), 550);
@@ -275,10 +285,40 @@ function renderCard(msg, answers, delay) {
   return el;
 }
 
+// ── Pasek postępu odpowiedzi (liczy tylko pytania; aktualizowany na żywo) ──
+let CURRENT_FEED = null, progressEl = null;
+function progressNumbers() {
+  const ans = lsLoad();
+  const qs = (CURRENT_FEED || []).filter(m => m.kind === 'pytanie');
+  return { done: qs.filter(m => isDone(m, ans)).length, total: qs.length };
+}
+function paintProgress() {
+  if (!progressEl) return;
+  const { done, total } = progressNumbers();
+  if (total === 0) { progressEl.style.display = 'none'; return; }
+  progressEl.style.display = '';
+  if (done >= total) {
+    progressEl.className = 'progress done';
+    progressEl.innerHTML = `<div class="pdone-title">Wszystko z głowy! 🎉</div>` +
+      `<div class="pdone-sub">Odpowiedzieliście na wszystkie pytania — dzięki! Możecie wracać i zmieniać odpowiedzi (w Historii). Gdy dorzucę nowe, pojawią się tutaj i dam znać.</div>`;
+  } else {
+    progressEl.className = 'progress';
+    const pct = Math.round(done / total * 100);
+    progressEl.innerHTML = `<div class="ptop"><span>Wasze odpowiedzi</span><span class="pcount">${done} z ${total} pytań</span></div>` +
+      `<div class="pbar"><div class="pfill" style="width:${pct}%"></div></div>`;
+  }
+}
+
 function renderPortal(feed, answers) {
   root.innerHTML = '';
+  CURRENT_FEED = feed;
   const active = [], history = [];
   feed.forEach(m => (isDone(m, answers) ? history : active).push(m));
+
+  // ── Pasek postępu (na górze) ──
+  progressEl = document.createElement('div');
+  root.appendChild(progressEl);
+  paintProgress();
 
   // ── Aktywne — pełne karty, pogrupowane po adresacie ──
   let lastRecip = null, delay = 0;
@@ -294,11 +334,6 @@ function renderPortal(feed, answers) {
     } else if (msg.recipient === 'oboje') { lastRecip = null; }
     root.appendChild(renderCard(msg, answers, (delay += 55)));
   });
-  if (!active.length) {
-    const p = document.createElement('p'); p.className = 'all-done';
-    p.textContent = 'Wszystko ogarnięte — dzięki! Nowe pytania pojawią się tutaj.';
-    root.appendChild(p);
-  }
 
   root.appendChild(renderReplyBox());
 
