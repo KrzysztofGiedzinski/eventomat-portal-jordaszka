@@ -331,9 +331,15 @@ async function notifyJordanowie(intro, btn) {
     const data = await r.json();
     if (!data.ok) throw new Error(data.error || 'błąd');
     showPill('', 'Powiadomienie wysłane ✓');
-    // sukces → zwiń pasek do potwierdzenia (znika formularz)
-    if (bar) bar.innerHTML = '<div class="nb-title">Powiadomienie wysłane ✓</div>' +
-      '<p style="font-size:13.5px;color:var(--ink-soft)">Mail z linkiem do portalu poszedł do Jordanów.</p>';
+    // sukces → zwiń pasek do potwierdzenia (znika formularz); „Wyślij kolejne" go przywraca
+    if (bar) {
+      bar.innerHTML = '<div class="nb-title">Powiadomienie wysłane ✓</div>' +
+        '<p style="font-size:13.5px;color:var(--ink-soft);margin-bottom:12px">Mail z linkiem do portalu poszedł do Jordanów.</p>';
+      const again = document.createElement('button');
+      again.className = 'btn ghost'; again.textContent = 'Wyślij kolejne';
+      again.addEventListener('click', () => renderAdmin());
+      bar.appendChild(again);
+    }
   } catch (e) {
     showPill('error', 'Nie udało się wysłać'); console.error(e);
     btn.disabled = false; btn.textContent = 'Powiadom Jordanów';
