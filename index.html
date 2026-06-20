@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="robots" content="noindex, nofollow" />
 <title>Portal Klienta · Jordaszka — Eventomat</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<link rel="manifest" href="site.webmanifest" />
+<meta name="theme-color" content="#8a9d34" />
+<meta name="apple-mobile-web-app-title" content="Jordaszka" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -163,6 +169,12 @@
   .subhead.owner .scount { background: var(--info-soft); color: var(--info); }
   .empty-note { color: #b9b6a8; font-style: italic; font-size: 14px; padding: 8px 0; }
   .pinned-inbox { margin-bottom: 4px; }
+  .vis-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; }
+  .btn-del { font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid var(--line-strong); background: #fff; color: #9a3b3b; border-radius: 8px; padding: 4px 11px; transition: background .12s, border-color .12s; }
+  .btn-del:hover { background: #fbeaea; border-color: #e6c4c4; }
+  .btn-del:disabled { opacity: .5; cursor: default; }
+  .btn-clear { font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid var(--line-strong); background: #fff; color: var(--ink-soft); border-radius: 8px; padding: 5px 11px; margin-left: auto; transition: color .12s, border-color .12s, background .12s; }
+  .btn-clear:hover { color: #9a3b3b; border-color: #e6c4c4; background: #fbeaea; }
 
   /* admin */
   .admin-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: start; padding: 14px 0; border-bottom: 1px solid var(--line); }
@@ -199,6 +211,9 @@
     header { padding: 64px 0 8px; }
     .brand img { height: 54px; }
     .card { padding: 26px 28px 24px; }
+    /* widok admina: tablica robocza na pełną szerokość strony */
+    body.admin-mode { padding-left: 40px; padding-right: 40px; }
+    body.admin-mode .wrap { max-width: none; }
   }
 </style>
 </head>
@@ -486,10 +501,30 @@ function buildAdminCard(msg, ans) {
   return box;
 }
 
+async function deleteVisit(id, btn) {
+  if (!confirm('Usunąć ten wpis o wizycie?')) return;
+  btn.disabled = true; btn.textContent = 'Usuwam…';
+  const { error } = await sb.rpc('delete_portal_visit', { p_token: adminToken, p_id: id });
+  if (error) { showPill('error', 'Nie udało się usunąć'); btn.disabled = false; btn.textContent = 'Usuń'; console.error(error); return; }
+  showPill('', 'Usunięto ✓'); renderAdmin();
+}
+async function clearVisits(source, btn) {
+  if (!confirm('Usunąć wszystkie Twoje wpisy testowe (źródło „ja/test")?')) return;
+  btn.disabled = true; btn.textContent = 'Czyszczę…';
+  const { error } = await sb.rpc('delete_portal_visits_by_source', { p_token: adminToken, p_source: source });
+  if (error) { showPill('error', 'Nie udało się wyczyścić'); btn.disabled = false; btn.textContent = 'Wyczyść testy'; console.error(error); return; }
+  showPill('', 'Wyczyszczono ✓'); renderAdmin();
+}
+
 function buildVisitsGroup(list, label, owner) {
   const frag = document.createDocumentFragment();
   const head = document.createElement('div'); head.className = 'subhead' + (owner ? ' owner' : '');
   head.innerHTML = `${esc(label)} <span class="scount">${list.length}</span>`;
+  if (owner && list.length) {
+    const clr = document.createElement('button'); clr.className = 'btn-clear'; clr.textContent = 'Wyczyść testy';
+    clr.addEventListener('click', () => clearVisits('owner', clr));
+    head.appendChild(clr);
+  }
   frag.appendChild(head);
   if (!list.length) {
     const e = document.createElement('div'); e.className = 'empty-note'; e.textContent = owner ? '— brak Twoich wizyt testowych —' : '— jeszcze nikt nie wszedł —';
@@ -497,13 +532,20 @@ function buildVisitsGroup(list, label, owner) {
   }
   list.forEach(v => {
     const d = document.createElement('div'); d.className = 'admin-row';
-    d.innerHTML = `<div><div class="a">${fmtWhen(v.opened_at)}</div><div class="k" style="margin-top:4px">na portalu ${fmtDur(v.seconds)} · ostatnio ${fmtWhen(v.last_seen_at)}</div></div><span class="badge ${owner?'wait':'done'}">${owner?'ja/test':'klient'}</span>`;
+    d.innerHTML = `<div><div class="a">${fmtWhen(v.opened_at)}</div><div class="k" style="margin-top:4px">na portalu ${fmtDur(v.seconds)} · ostatnio ${fmtWhen(v.last_seen_at)}</div></div>`;
+    const actions = document.createElement('div'); actions.className = 'vis-actions';
+    actions.innerHTML = `<span class="badge ${owner?'wait':'done'}">${owner?'ja/test':'klient'}</span>`;
+    const del = document.createElement('button'); del.className = 'btn-del'; del.textContent = 'Usuń';
+    del.addEventListener('click', () => deleteVisit(v.id, del));
+    actions.appendChild(del);
+    d.appendChild(actions);
     frag.appendChild(d);
   });
   return frag;
 }
 
 async function renderAdmin() {
+  document.body.classList.add('admin-mode');   // desktop: tablica na pełną szerokość
   document.getElementById('page-tag').textContent = 'Widok administratora';
   document.getElementById('page-title').textContent = 'Tablica portalu — Jordaszka';
   document.getElementById('page-lede').innerHTML = 'Podgląd na żywo: odpowiedzi, potwierdzenia i wiadomości od Jordanów.';
