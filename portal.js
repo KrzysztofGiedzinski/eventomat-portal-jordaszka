@@ -48,9 +48,6 @@ function showPill(state, text) {
 const LS_KEY = 'portal_' + RESPONDENT;
 function lsLoad() { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch { return {}; } }
 function lsSave(k, v) { const d = lsLoad(); d[k] = v; localStorage.setItem(LS_KEY, JSON.stringify(d)); }
-const SENT_KEY = 'portal_sent_' + RESPONDENT;
-function sentLoad() { try { return JSON.parse(localStorage.getItem(SENT_KEY)) || []; } catch { return []; } }
-function sentPush(o) { const a = sentLoad(); a.unshift(o); localStorage.setItem(SENT_KEY, JSON.stringify(a)); }
 
 // ── Zapis odpowiedzi (debounce) ────────────────────────────────────────────────
 const timers = {};
@@ -79,6 +76,25 @@ function isDone(msg, answers) {
   if (msg.kind === 'komunikat') return answers['ack_' + msg.id] != null;
   return false;
 }
+function deferState(msg, answers) {
+  const v = answers['defer_' + msg.id];
+  return (v === 'nie_wiem' || v === 'grzegorz') ? v : '';
+}
+
+function renderRefresh() { renderPortal(CURRENT_FEED, lsLoad()); }
+
+function renderDeferRow(msg, answers) {
+  const wrap = document.createElement('div'); wrap.className = 'defer-row';
+  const cur = deferState(msg, answers);
+  wrap.innerHTML = '<span class="defer-label">Nie teraz?</span>';
+  [['nie_wiem', 'Jeszcze nie wiem'], ['grzegorz', 'To pytanie do Grzegorza']].forEach(([val, lab]) => {
+    const b = document.createElement('button'); b.className = 'defer-btn' + (cur === val ? ' on' : '');
+    b.textContent = lab;
+    b.addEventListener('click', () => { queueSave('defer_' + msg.id, cur === val ? '' : val); renderRefresh(); });
+    wrap.appendChild(b);
+  });
+  return wrap;
+}
 
 function renderCard(msg, answers, delay) {
   const el = document.createElement('section');
@@ -94,6 +110,9 @@ function renderCard(msg, answers, delay) {
   } else if (msg.kind === 'komunikat') {
     el.appendChild(renderAck(msg.id, answers['ack_' + msg.id]));
   }
+  if (msg.kind === 'pytanie' && !isDone(msg, answers)) {
+    el.appendChild(renderDeferRow(msg, answers));
+  }
   return el;
 }
 
@@ -102,21 +121,24 @@ let CURRENT_FEED = null, progressEl = null;
 function progressNumbers() {
   const ans = lsLoad();
   const qs = (CURRENT_FEED || []).filter(m => m.kind === 'pytanie');
-  return { done: qs.filter(m => isDone(m, ans)).length, total: qs.length };
+  const done = qs.filter(m => isDone(m, ans)).length;
+  const deferred = qs.filter(m => !isDone(m, ans) && deferState(m, ans)).length;
+  return { done, deferred, total: qs.length };
 }
 function paintProgress() {
   if (!progressEl) return;
-  const { done, total } = progressNumbers();
+  const { done, deferred, total } = progressNumbers();
   if (total === 0) { progressEl.style.display = 'none'; return; }
   progressEl.style.display = '';
-  if (done >= total) {
+  if (done + deferred >= total) {
     progressEl.className = 'progress done';
     progressEl.innerHTML = `<div class="pdone-title">Wszystko z głowy! 🎉</div>` +
       `<div class="pdone-sub">Odpowiedzieliście na wszystkie pytania — dzięki! Możecie wracać i zmieniać odpowiedzi (w Historii). Gdy dorzucę nowe, pojawią się tutaj i dam znać.</div>`;
   } else {
     progressEl.className = 'progress';
     const pct = Math.round(done / total * 100);
-    progressEl.innerHTML = `<div class="ptop"><span>Wasze odpowiedzi</span><span class="pcount">${done} z ${total} pytań</span></div>` +
+    const deferNote = deferred > 0 ? ` · ${deferred} odłożone` : '';
+    progressEl.innerHTML = `<div class="ptop"><span>Wasze odpowiedzi</span><span class="pcount">${done} z ${total} pytań${deferNote}</span></div>` +
       `<div class="pbar"><div class="pfill" style="width:${pct}%"></div></div>`;
   }
 }
@@ -124,8 +146,12 @@ function paintProgress() {
 function renderPortal(feed, answers) {
   root.innerHTML = '';
   CURRENT_FEED = feed;
-  const active = [], history = [];
-  feed.forEach(m => (isDone(m, answers) ? history : active).push(m));
+  const active = [], deferred = [], history = [];
+  feed.forEach(m => {
+    if (isDone(m, answers)) history.push(m);
+    else if (deferState(m, answers)) deferred.push(m);
+    else active.push(m);
+  });
 
   // ── Pasek postępu (na górze) ──
   progressEl = document.createElement('div');
@@ -146,6 +172,24 @@ function renderPortal(feed, answers) {
     } else if (msg.recipient === 'oboje') { lastRecip = null; }
     root.appendChild(renderCard(msg, answers, (delay += 55)));
   });
+
+  // ── Do wyjaśnienia — odłożone świadomie ──
+  if (deferred.length) {
+    const dSec = document.createElement('div'); dSec.className = 'section-defer';
+    const dHead = document.createElement('div'); dHead.className = 'section-head';
+    dHead.innerHTML = `<div class="chip">⏸</div><div><h2>Do wyjaśnienia</h2><p>Pytania odłożone — wróćcie, gdy będziecie gotowi.</p></div>`;
+    dSec.appendChild(dHead);
+    deferred.forEach(msg => {
+      const card = renderCard(msg, answers, (delay += 55));
+      const state = deferState(msg, answers);
+      const reasonLabel = state === 'grzegorz' ? 'To pytanie do Grzegorza' : 'Jeszcze nie wiem';
+      const badge = document.createElement('div'); badge.className = 'defer-reason-badge';
+      badge.textContent = reasonLabel;
+      card.insertBefore(badge, card.firstChild.nextSibling);
+      dSec.appendChild(card);
+    });
+    root.appendChild(dSec);
+  }
 
   root.appendChild(renderReplyBox());
 
@@ -232,17 +276,27 @@ function renderReplyBox() {
   const btn = document.createElement('button'); btn.className = 'btn'; btn.textContent = 'Wyślij';
   row.appendChild(btn);
   const sentBox = document.createElement('div'); sentBox.className = 'sent-list';
-  function renderSent() {
-    const a = sentLoad();
-    sentBox.innerHTML = a.length ? '<div class="k" style="font-size:12px;color:var(--ink-soft);margin-top:6px">Wysłane przez Was:</div>' : '';
-    a.forEach(s => { const d = document.createElement('div'); d.className = 'sent-item'; d.innerHTML = `${esc(s.body)}<span class="when">${fmtWhen(s.at)}</span>`; sentBox.appendChild(d); });
+  async function renderSent() {
+    const { data, error } = await sb.rpc('get_my_inbound', { p_token: RESPONDENT });
+    const list = error ? [] : (data || []);
+    sentBox.innerHTML = list.length ? '<div class="k" style="font-size:12px;color:var(--ink-soft);margin-top:6px">Wasze wiadomości:</div>' : '';
+    list.forEach(s => {
+      const item = document.createElement('div'); item.className = 'sent-item';
+      item.innerHTML = `${esc(s.body)}<span class="when">${fmtWhen(s.created_at)}</span>`;
+      if (s.reply) {
+        const rep = document.createElement('div'); rep.className = 'sent-reply';
+        rep.innerHTML = `<span class="rep-who">Krzysztof:</span> ${esc(s.reply)}<span class="when">${fmtWhen(s.replied_at)}</span>`;
+        item.appendChild(rep);
+      }
+      sentBox.appendChild(item);
+    });
   }
   btn.addEventListener('click', async () => {
     const body = ta.value.trim(); if (!body) return;
     btn.disabled = true; btn.textContent = 'Wysyłam…';
     const { error } = await sb.rpc('send_portal_message', { p_token: RESPONDENT, p_body: body });
     if (error) { showPill('error', 'Nie udało się wysłać'); btn.disabled = false; btn.textContent = 'Wyślij'; console.error(error); return; }
-    sentPush({ body, at: new Date().toISOString() }); ta.value = ''; renderSent();
+    ta.value = ''; await renderSent();
     showPill('', 'Wysłano ✓'); btn.disabled = false; btn.textContent = 'Wyślij';
   });
   card.appendChild(ta); card.appendChild(row); card.appendChild(sentBox);
@@ -253,6 +307,10 @@ function renderReplyBox() {
 
 // ── Render: widok administratora ────────────────────────────────────────────────
 // „odpowiedziany" wpis: komunikat = potwierdzony; pytanie = ma co najmniej jedną odpowiedź.
+function adminDefer(msg, ans) {
+  const v = ans['defer_' + msg.id] && ans['defer_' + msg.id].answer;
+  return (v === 'nie_wiem' || v === 'grzegorz') ? v : '';
+}
 function adminIsAnswered(msg, ans) {
   if (msg.kind === 'komunikat') return ans['ack_' + msg.id] != null;
   return (msg.fields || []).some(f => ans[f.key] != null);
@@ -262,6 +320,14 @@ function adminIsAnswered(msg, ans) {
 function buildAdminCard(msg, ans) {
   const box = document.createElement('section'); box.className = 'card';
   box.innerHTML = `<div class="kicker ${msg.kind==='komunikat'?'k':'q'}">${msg.kind==='komunikat'?'Komunikat':'Pytanie'} · ${RECIP[msg.recipient]?RECIP[msg.recipient].name:'Oboje'}</div><div class="q-title">${esc(msg.title)}</div>`;
+  if (msg.kind === 'pytanie') {
+    const d = adminDefer(msg, ans);
+    if (d) {
+      const tag = document.createElement('div'); tag.className = 'defer-tag';
+      tag.textContent = d === 'grzegorz' ? 'Odłożone → do Grzegorza' : 'Odłożone → jeszcze nie wie';
+      box.appendChild(tag);
+    }
+  }
   if (msg.kind === 'komunikat') {
     const a = ans['ack_' + msg.id];
     const row = document.createElement('div'); row.className = 'admin-row';
@@ -356,7 +422,22 @@ async function renderAdmin() {
   const inbox = document.createElement('section'); inbox.className = 'card pinned-inbox';
   inbox.innerHTML = `<div class="kicker k">Skrzynka</div><div class="q-title">Wiadomości od Jordanów ${inb.length?`<span class="hist-count">${inb.length}</span>`:''}</div>`;
   if (!inb.length) inbox.innerHTML += `<p class="q-intro">— brak wiadomości —</p>`;
-  inb.forEach(m => { const d = document.createElement('div'); d.className='admin-row'; d.innerHTML = `<div><div class="a">${esc(m.body)}</div><div class="k" style="margin-top:4px">${fmtWhen(m.created_at)}</div></div>`; inbox.appendChild(d); });
+  inb.forEach(m => {
+    const d = document.createElement('div'); d.className = 'admin-row';
+    d.innerHTML = `<div><div class="a">${esc(m.body)}</div><div class="k" style="margin-top:4px">${fmtWhen(m.created_at)}</div></div>`;
+    const reply = document.createElement('div'); reply.className = 'inbox-reply';
+    const ta = document.createElement('textarea'); ta.placeholder = 'Twoja odpowiedź…'; if (m.reply) ta.value = m.reply;
+    const rb = document.createElement('button'); rb.className = 'btn ghost'; rb.textContent = m.reply ? 'Zapisz zmianę' : 'Odpowiedz';
+    rb.addEventListener('click', async () => {
+      rb.disabled = true; showPill('saving', 'Zapisuję…');
+      const { error } = await sb.rpc('reply_to_inbound', { p_token: adminToken, p_id: m.id, p_reply: ta.value });
+      if (error) { showPill('error', 'Błąd zapisu'); rb.disabled = false; return; }
+      showPill('', 'Odpowiedź zapisana ✓'); renderAdmin();
+    });
+    if (m.replied_at) { const meta = document.createElement('div'); meta.className = 'k'; meta.textContent = 'Odpowiedziano ' + fmtWhen(m.replied_at); reply.appendChild(meta); }
+    reply.appendChild(ta); reply.appendChild(rb);
+    d.appendChild(reply); inbox.appendChild(d);
+  });
   root.appendChild(inbox);
 
   // ── Zakładki ──
