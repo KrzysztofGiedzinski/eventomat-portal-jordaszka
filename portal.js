@@ -296,6 +296,12 @@ function renderReplyBox() {
     btn.disabled = true; btn.textContent = 'Wysyłam…';
     const { error } = await sb.rpc('send_portal_message', { p_token: RESPONDENT, p_body: body });
     if (error) { showPill('error', 'Nie udało się wysłać'); btn.disabled = false; btn.textContent = 'Wyślij'; console.error(error); return; }
+    // powiadom Krzysztofa mailem (fire-and-forget — wiadomość jest już zapisana w bazie)
+    fetch(SUPABASE_URL + '/functions/v1/notify-owner', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SUPABASE_ANON, 'apikey': SUPABASE_ANON, 'content-type': 'application/json' },
+      body: JSON.stringify({ token: RESPONDENT, body }),
+    }).catch(e => console.error('notify-owner', e));
     ta.value = ''; await renderSent();
     showPill('', 'Wysłano ✓'); btn.disabled = false; btn.textContent = 'Wyślij';
   });
