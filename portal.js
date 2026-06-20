@@ -319,6 +319,7 @@ function countWaitingQuestions(feed, ans) {
   return feed.filter(m => m.kind === 'pytanie' && !adminIsAnswered(m, ans)).length;
 }
 async function notifyJordanowie(intro, btn) {
+  const bar = btn.closest('.notify-bar');
   btn.disabled = true; btn.textContent = 'Wysyłam…';
   showPill('saving', 'Wysyłam powiadomienie…');
   try {
@@ -330,9 +331,11 @@ async function notifyJordanowie(intro, btn) {
     const data = await r.json();
     if (!data.ok) throw new Error(data.error || 'błąd');
     showPill('', 'Powiadomienie wysłane ✓');
+    // sukces → zwiń pasek do potwierdzenia (znika formularz)
+    if (bar) bar.innerHTML = '<div class="nb-title">Powiadomienie wysłane ✓</div>' +
+      '<p style="font-size:13.5px;color:var(--ink-soft)">Mail z linkiem do portalu poszedł do Jordanów.</p>';
   } catch (e) {
     showPill('error', 'Nie udało się wysłać'); console.error(e);
-  } finally {
     btn.disabled = false; btn.textContent = 'Powiadom Jordanów';
   }
 }
