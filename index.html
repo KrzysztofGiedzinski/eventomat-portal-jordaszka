@@ -250,11 +250,27 @@ const RESPONDENT    = 'jordaszka';
 // Sekret admina NIE jest zaszyty w stronie — podajesz go w URL: ?view=admin&token=<sekret>.
 // Autoryzację robi serwer (RPC waliduje token); strona przekazuje tylko to, co w URL.
 const params     = new URLSearchParams(location.search);
-const isAdmin    = params.get('view') === 'admin';
-const adminToken = params.get('token') || '';
-// Tryb podglądu autora: wejście z ?preview=1 oznacza wizytę jako 'owner' (testy Krzysztofa),
-// żeby nie mieszała się w logach z realnymi wizytami klienta ('client').
-const VISIT_SOURCE = params.get('preview') === '1' ? 'owner' : 'client';
+// ── Tryb widoku ──────────────────────────────────────────────────────────────
+// Problem: ikona dodana do ekranu głównego startuje z manifestu (start_url './'),
+// więc gubi ?view=admin&token=… → portal otwierał się jako klient. Rozwiązanie:
+// zapamiętujemy token admina w localStorage TEGO urządzenia. Wejście bez jawnego
+// ?view=client (i bez ?preview=1) na urządzeniu z zapisaną sesją → Widok admina.
+const ADMIN_LS   = 'eventomat_admin_token';
+const wantClient = params.get('view') === 'client' || params.get('preview') === '1';
+let isAdmin = false, adminToken = '';
+if (params.get('view') === 'admin') {
+  isAdmin = true; adminToken = params.get('token') || '';
+  if (adminToken) { try { localStorage.setItem(ADMIN_LS, adminToken); } catch {} }   // zapamiętaj sesję na tym telefonie
+} else if (!wantClient) {
+  let saved = ''; try { saved = localStorage.getItem(ADMIN_LS) || ''; } catch {}
+  if (saved) { isAdmin = true; adminToken = saved; }                                  // ikona './' → rozpoznaj urządzenie admina
+}
+// Źródło wizyty: każde urządzenie z zapamiętaną sesją admina to Krzysztof → 'owner'
+// (bez konieczności pamiętania o ?preview=1). Telefon Jordanów nie ma tej sesji → 'client'.
+// ?preview=1 zostaje jako ręczne wymuszenie 'owner' (np. na świeżym urządzeniu).
+let deviceIsOwner = false;
+try { deviceIsOwner = !!localStorage.getItem(ADMIN_LS); } catch {}
+const VISIT_SOURCE = (deviceIsOwner || params.get('preview') === '1') ? 'owner' : 'client';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
 const root = document.getElementById('root');
@@ -549,7 +565,14 @@ async function renderAdmin() {
   document.getElementById('page-tag').textContent = 'Widok administratora';
   document.getElementById('page-title').textContent = 'Tablica portalu — Jordaszka';
   document.getElementById('page-lede').innerHTML = 'Podgląd na żywo: odpowiedzi, potwierdzenia i wiadomości od Jordanów.';
-  document.getElementById('page-footer').textContent = 'Widok administratora';
+  const adminFooter = document.getElementById('page-footer');
+  adminFooter.innerHTML = 'Widok administratora · <a href="?view=client" style="color:var(--accent-deep);text-decoration:none">podgląd jako klient</a> · <a href="#" id="admin-unlink" style="color:var(--ink-soft);text-decoration:none">odepnij to urządzenie</a>';
+  adminFooter.querySelector('#admin-unlink').addEventListener('click', e => {
+    e.preventDefault();
+    if (!confirm('Odpiąć sesję admina od tego urządzenia? Ponowne wejście wymaga linku z tokenem.')) return;
+    try { localStorage.removeItem(ADMIN_LS); } catch {}
+    location.href = '?view=client';
+  });
 
   const [feedR, ansR, inbR, visR] = await Promise.all([
     sb.rpc('get_portal_feed', { p_token: adminToken }),
