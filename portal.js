@@ -307,6 +307,30 @@ function renderReplyBox() {
 
 // ── Render: widok administratora ────────────────────────────────────────────────
 // „odpowiedziany" wpis: komunikat = potwierdzony; pytanie = ma co najmniej jedną odpowiedź.
+
+// liczy aktywne pytania bez żadnej odpowiedzi (do auto-podpowiedzi treści maila)
+function countWaitingQuestions(feed, ans) {
+  return feed.filter(m => m.kind === 'pytanie' && !adminIsAnswered(m, ans)).length;
+}
+async function notifyJordanowie(intro, btn) {
+  btn.disabled = true; btn.textContent = 'Wysyłam…';
+  showPill('saving', 'Wysyłam powiadomienie…');
+  try {
+    const r = await fetch(SUPABASE_URL + '/functions/v1/notify-jordanowie', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SUPABASE_ANON, 'apikey': SUPABASE_ANON, 'content-type': 'application/json' },
+      body: JSON.stringify({ token: adminToken, intro }),
+    });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'błąd');
+    showPill('', 'Powiadomienie wysłane ✓');
+  } catch (e) {
+    showPill('error', 'Nie udało się wysłać'); console.error(e);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Powiadom Jordanów';
+  }
+}
+
 function adminDefer(msg, ans) {
   const v = ans['defer_' + msg.id] && ans['defer_' + msg.id].answer;
   return (v === 'nie_wiem' || v === 'grzegorz') ? v : '';
@@ -478,6 +502,24 @@ async function renderAdmin() {
     });
     tabsBar.appendChild(b);
   });
+  // ── Pasek powiadomienia e-mail (nad zakładkami) ──
+  const notifyBar = document.createElement('div');
+  notifyBar.className = 'notify-bar';
+  const nWaiting = countWaitingQuestions(feed, ans);
+  const suggested = nWaiting > 0
+    ? 'Dorzuciłem ' + nWaiting + ' ' + (nWaiting === 1 ? 'nowe pytanie' : 'nowych pytań') + ' w portalu — zerknijcie, gdy będzie chwila.'
+    : 'Mam dla Was nowe informacje w portalu.';
+  const ta = document.createElement('textarea');
+  ta.className = 'notify-intro'; ta.value = suggested;
+  const nbtn = document.createElement('button'); nbtn.className = 'btn'; nbtn.textContent = 'Powiadom Jordanów';
+  nbtn.addEventListener('click', () => {
+    if (!confirm('Wysłać e-mail z powiadomieniem na jordan@jordaszka.pl?')) return;
+    notifyJordanowie(ta.value.trim(), nbtn);
+  });
+  notifyBar.innerHTML = '<div class="nb-title">Powiadomienie e-mail</div>';
+  notifyBar.appendChild(ta); notifyBar.appendChild(nbtn);
+  root.appendChild(notifyBar);
+
   root.appendChild(tabsBar);
   Object.values(panels).forEach(p => root.appendChild(p));
   panels[TABS[0].id].classList.add('active');
