@@ -147,6 +147,23 @@
   .loading { text-align: center; color: var(--ink-soft); padding: 48px 0; font-size: 15px; }
   .toast-error { padding: 14px 16px; border-radius: 12px; background: #fbeaea; border: 1px solid #e6c4c4; color: #8a2c2c; font-size: 14px; margin-top: 16px; }
 
+  /* admin — zakładki */
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 20px; padding: 5px; background: #f4f2ea; border: 1px solid var(--line); border-radius: 13px; }
+  .tab { flex: 1; min-width: 120px; cursor: pointer; border: none; background: transparent; font-family: inherit; font-size: 13.5px; font-weight: 600; color: var(--ink-soft); padding: 9px 12px; border-radius: 9px; transition: background .12s, color .12s; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+  .tab:hover { color: var(--ink); }
+  .tab.active { background: #fff; color: var(--ink); box-shadow: var(--shadow); }
+  .tab .tcount { font-size: 11px; font-weight: 700; min-width: 18px; padding: 1px 6px; border-radius: 999px; background: var(--line); color: var(--ink-soft); }
+  .tab.active .tcount { background: var(--accent-soft); color: var(--accent-deep); }
+  .tabpanel { display: none; }
+  .tabpanel.active { display: block; animation: rise .35s cubic-bezier(.2,.7,.2,1) both; }
+  @media (prefers-reduced-motion: reduce) { .tabpanel.active { animation: none; } }
+  .subhead { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; color: var(--ink-soft); margin: 22px 0 10px; display: flex; align-items: center; gap: 8px; }
+  .subhead:first-child { margin-top: 4px; }
+  .subhead .scount { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--line); color: var(--ink-soft); }
+  .subhead.owner .scount { background: var(--info-soft); color: var(--info); }
+  .empty-note { color: #b9b6a8; font-style: italic; font-size: 14px; padding: 8px 0; }
+  .pinned-inbox { margin-bottom: 4px; }
+
   /* admin */
   .admin-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: start; padding: 14px 0; border-bottom: 1px solid var(--line); }
   .admin-row .k { font-size: 12px; color: var(--ink-soft); }
@@ -220,6 +237,9 @@ const RESPONDENT    = 'jordaszka';
 const params     = new URLSearchParams(location.search);
 const isAdmin    = params.get('view') === 'admin';
 const adminToken = params.get('token') || '';
+// Tryb podglądu autora: wejście z ?preview=1 oznacza wizytę jako 'owner' (testy Krzysztofa),
+// żeby nie mieszała się w logach z realnymi wizytami klienta ('client').
+const VISIT_SOURCE = params.get('preview') === '1' ? 'owner' : 'client';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
 const root = document.getElementById('root');
@@ -440,6 +460,49 @@ function renderReplyBox() {
 }
 
 // ── Render: widok administratora ────────────────────────────────────────────────
+// „odpowiedziany" wpis: komunikat = potwierdzony; pytanie = ma co najmniej jedną odpowiedź.
+function adminIsAnswered(msg, ans) {
+  if (msg.kind === 'komunikat') return ans['ack_' + msg.id] != null;
+  return (msg.fields || []).some(f => ans[f.key] != null);
+}
+
+// karta jednego wpisu w tablicy admina (odpowiedzi / potwierdzenie)
+function buildAdminCard(msg, ans) {
+  const box = document.createElement('section'); box.className = 'card';
+  box.innerHTML = `<div class="kicker ${msg.kind==='komunikat'?'k':'q'}">${msg.kind==='komunikat'?'Komunikat':'Pytanie'} · ${RECIP[msg.recipient]?RECIP[msg.recipient].name:'Oboje'}</div><div class="q-title">${esc(msg.title)}</div>`;
+  if (msg.kind === 'komunikat') {
+    const a = ans['ack_' + msg.id];
+    const row = document.createElement('div'); row.className = 'admin-row';
+    row.innerHTML = `<div class="${a?'a':'a empty'}">${a?'Przeczytane ✓ '+fmtWhen(a.answer):'— nie potwierdzono —'}</div><span class="badge ${a?'done':'wait'}">${a?'ok':'czeka'}</span>`;
+    box.appendChild(row);
+  } else {
+    (msg.fields || []).forEach(f => {
+      const a = ans[f.key]; const row = document.createElement('div'); row.className = 'admin-row';
+      const val = a ? esc(String(a.answer)) : '— czeka —';
+      row.innerHTML = `<div><div class="k">${esc(f.label)}</div><div class="a ${a?'':'empty'}">${val}</div>${a?`<div class="k" style="margin-top:4px">${fmtWhen(a.updated_at)}</div>`:''}</div><span class="badge ${a?'done':'wait'}">${a?'odpowiedziano':'czeka'}</span>`;
+      box.appendChild(row);
+    });
+  }
+  return box;
+}
+
+function buildVisitsGroup(list, label, owner) {
+  const frag = document.createDocumentFragment();
+  const head = document.createElement('div'); head.className = 'subhead' + (owner ? ' owner' : '');
+  head.innerHTML = `${esc(label)} <span class="scount">${list.length}</span>`;
+  frag.appendChild(head);
+  if (!list.length) {
+    const e = document.createElement('div'); e.className = 'empty-note'; e.textContent = owner ? '— brak Twoich wizyt testowych —' : '— jeszcze nikt nie wszedł —';
+    frag.appendChild(e);
+  }
+  list.forEach(v => {
+    const d = document.createElement('div'); d.className = 'admin-row';
+    d.innerHTML = `<div><div class="a">${fmtWhen(v.opened_at)}</div><div class="k" style="margin-top:4px">na portalu ${fmtDur(v.seconds)} · ostatnio ${fmtWhen(v.last_seen_at)}</div></div><span class="badge ${owner?'wait':'done'}">${owner?'ja/test':'klient'}</span>`;
+    frag.appendChild(d);
+  });
+  return frag;
+}
+
 async function renderAdmin() {
   document.getElementById('page-tag').textContent = 'Widok administratora';
   document.getElementById('page-title').textContent = 'Tablica portalu — Jordaszka';
@@ -454,47 +517,63 @@ async function renderAdmin() {
   ]);
   if (feedR.error || ansR.error) { root.innerHTML = `<div class="toast-error">Błąd odczytu: ${esc((feedR.error||ansR.error).message)}</div>`; return; }
   const ans = {}; (ansR.data || []).forEach(r => ans[r.question_key] = r);
+  const feed = feedR.data || [];
+  const waiting  = feed.filter(m => !adminIsAnswered(m, ans));
+  const answered = feed.filter(m =>  adminIsAnswered(m, ans));
+  const visits = visR && !visR.error ? (visR.data || []) : [];
+  const visClient = visits.filter(v => v.source !== 'owner');
+  const visOwner  = visits.filter(v => v.source === 'owner');
+  const inb = inbR.error ? [] : (inbR.data || []);
   root.innerHTML = '';
 
-  // wizyty na portalu (kto był i jak długo)
-  const visits = visR && !visR.error ? (visR.data || []) : [];
-  const vbox = document.createElement('section'); vbox.className = 'card';
-  vbox.innerHTML = `<div class="kicker k">Aktywność</div><div class="q-title">Wizyty na portalu</div>`;
-  if (!visits.length) vbox.innerHTML += `<p class="q-intro">— jeszcze nikt nie wszedł —</p>`;
-  visits.forEach(v => {
-    const d = document.createElement('div'); d.className = 'admin-row';
-    d.innerHTML = `<div><div class="a">${fmtWhen(v.opened_at)}</div><div class="k" style="margin-top:4px">na portalu ${fmtDur(v.seconds)} · ostatnio ${fmtWhen(v.last_seen_at)}</div></div><span class="badge done">wizyta</span>`;
-    vbox.appendChild(d);
-  });
-  root.appendChild(vbox);
-
-  // wiadomości od klienta
-  const inbox = document.createElement('section'); inbox.className = 'card';
-  inbox.innerHTML = `<div class="kicker k">Skrzynka</div><div class="q-title">Wiadomości od Jordanów</div>`;
-  const inb = inbR.error ? [] : (inbR.data || []);
+  // ── Skrzynka — przypięta na górze (poza zakładkami) ──
+  const inbox = document.createElement('section'); inbox.className = 'card pinned-inbox';
+  inbox.innerHTML = `<div class="kicker k">Skrzynka</div><div class="q-title">Wiadomości od Jordanów ${inb.length?`<span class="hist-count">${inb.length}</span>`:''}</div>`;
   if (!inb.length) inbox.innerHTML += `<p class="q-intro">— brak wiadomości —</p>`;
   inb.forEach(m => { const d = document.createElement('div'); d.className='admin-row'; d.innerHTML = `<div><div class="a">${esc(m.body)}</div><div class="k" style="margin-top:4px">${fmtWhen(m.created_at)}</div></div>`; inbox.appendChild(d); });
   root.appendChild(inbox);
 
-  // odpowiedzi per wpis
-  (feedR.data || []).forEach(msg => {
-    const box = document.createElement('section'); box.className = 'card';
-    box.innerHTML = `<div class="kicker ${msg.kind==='komunikat'?'k':'q'}">${msg.kind==='komunikat'?'Komunikat':'Pytanie'} · ${RECIP[msg.recipient]?RECIP[msg.recipient].name:'Oboje'}</div><div class="q-title">${esc(msg.title)}</div>`;
-    if (msg.kind === 'komunikat') {
-      const a = ans['ack_' + msg.id];
-      const row = document.createElement('div'); row.className = 'admin-row';
-      row.innerHTML = `<div class="${a?'a':'a empty'}">${a?'Przeczytane ✓ '+fmtWhen(a.answer):'— nie potwierdzono —'}</div><span class="badge ${a?'done':'wait'}">${a?'ok':'czeka'}</span>`;
-      box.appendChild(row);
-    } else {
-      (msg.fields || []).forEach(f => {
-        const a = ans[f.key]; const row = document.createElement('div'); row.className = 'admin-row';
-        const val = a ? esc(String(a.answer)) : '— czeka —';
-        row.innerHTML = `<div><div class="k">${esc(f.label)}</div><div class="a ${a?'':'empty'}">${val}</div>${a?`<div class="k" style="margin-top:4px">${fmtWhen(a.updated_at)}</div>`:''}</div><span class="badge ${a?'done':'wait'}">${a?'odpowiedziano':'czeka'}</span>`;
-        box.appendChild(row);
-      });
-    }
-    root.appendChild(box);
+  // ── Zakładki ──
+  const TABS = [
+    { id: 'wizyty',   label: 'Wizyty',       count: visits.length },
+    { id: 'czekaja',  label: 'Czekają',      count: waiting.length },
+    { id: 'gotowe',   label: 'Odpowiedziane', count: answered.length },
+  ];
+  const tabsBar = document.createElement('div'); tabsBar.className = 'tabs';
+  const panels = {};
+
+  // panel: Wizyty (rozdzielone klient / ja-testy)
+  const pVis = document.createElement('div'); pVis.className = 'tabpanel';
+  pVis.appendChild(buildVisitsGroup(visClient, 'Klient (Dominika / Grzegorz)', false));
+  pVis.appendChild(buildVisitsGroup(visOwner, 'Ja / testy (podgląd ?preview=1)', true));
+  panels.wizyty = pVis;
+
+  // panel: Czekają
+  const pWait = document.createElement('div'); pWait.className = 'tabpanel';
+  if (!waiting.length) pWait.innerHTML = `<div class="empty-note">— wszystko odpowiedziane 🎉 —</div>`;
+  waiting.forEach(msg => pWait.appendChild(buildAdminCard(msg, ans)));
+  panels.czekaja = pWait;
+
+  // panel: Odpowiedziane
+  const pDone = document.createElement('div'); pDone.className = 'tabpanel';
+  if (!answered.length) pDone.innerHTML = `<div class="empty-note">— jeszcze nic nie odpowiedziano —</div>`;
+  answered.forEach(msg => pDone.appendChild(buildAdminCard(msg, ans)));
+  panels.gotowe = pDone;
+
+  TABS.forEach((t, i) => {
+    const b = document.createElement('button'); b.className = 'tab' + (i === 0 ? ' active' : '');
+    b.innerHTML = `${t.label} <span class="tcount">${t.count}</span>`;
+    b.addEventListener('click', () => {
+      tabsBar.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      Object.values(panels).forEach(p => p.classList.remove('active'));
+      panels[t.id].classList.add('active');
+    });
+    tabsBar.appendChild(b);
   });
+  root.appendChild(tabsBar);
+  Object.values(panels).forEach(p => root.appendChild(p));
+  panels[TABS[0].id].classList.add('active');
 }
 
 // ── Narzędzia ────────────────────────────────────────────────────────────────
@@ -507,7 +586,7 @@ function fmtDur(s) { s = Math.max(0, s || 0); if (s < 60) return s + ' s'; retur
 let visitId = null;
 async function trackVisit() {
   try {
-    const { data, error } = await sb.rpc('track_visit', { p_token: RESPONDENT, p_visit_id: visitId });
+    const { data, error } = await sb.rpc('track_visit', { p_token: RESPONDENT, p_visit_id: visitId, p_source: VISIT_SOURCE });
     if (!error && data != null) visitId = data;
   } catch (e) { /* offline — pomijamy */ }
 }
