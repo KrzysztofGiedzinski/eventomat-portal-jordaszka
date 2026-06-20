@@ -257,13 +257,18 @@ const params     = new URLSearchParams(location.search);
 // ?view=client (i bez ?preview=1) na urządzeniu z zapisaną sesją → Widok admina.
 const ADMIN_LS   = 'eventomat_admin_token';
 const wantClient = params.get('view') === 'client' || params.get('preview') === '1';
+// Tryb standalone = uruchomienie z ikony na ekranie głównym (PWA), a NIE klik w zwykły link.
+// Dzięki temu goły link (karta przeglądarki) zawsze pokazuje klienta, nawet na urządzeniu admina;
+// admina z 'gołego' adresu dostajemy wyłącznie z ikony.
+const isStandalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+  || window.navigator.standalone === true;
 let isAdmin = false, adminToken = '';
 if (params.get('view') === 'admin') {
   isAdmin = true; adminToken = params.get('token') || '';
-  if (adminToken) { try { localStorage.setItem(ADMIN_LS, adminToken); } catch {} }   // zapamiętaj sesję na tym telefonie
-} else if (!wantClient) {
+  if (adminToken) { try { localStorage.setItem(ADMIN_LS, adminToken); } catch {} }   // zapamiętaj sesję na tym urządzeniu
+} else if (!wantClient && isStandalone) {
   let saved = ''; try { saved = localStorage.getItem(ADMIN_LS) || ''; } catch {}
-  if (saved) { isAdmin = true; adminToken = saved; }                                  // ikona './' → rozpoznaj urządzenie admina
+  if (saved) { isAdmin = true; adminToken = saved; }                                  // ikona (standalone) → Widok admina
 }
 // Źródło wizyty: każde urządzenie z zapamiętaną sesją admina to Krzysztof → 'owner'
 // (bez konieczności pamiętania o ?preview=1). Telefon Jordanów nie ma tej sesji → 'client'.
