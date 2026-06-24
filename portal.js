@@ -1,11 +1,19 @@
 // ── Konfiguracja ──────────────────────────────────────────────────────────────
 const SUPABASE_URL  = 'https://svhrrwqbajyflvnspuda.supabase.co';
 const SUPABASE_ANON = 'sb_publishable__q1Op2Wc8lk-HEsGUOhCYg_U8jTUNyg';
-const RESPONDENT    = 'jordaszka';
+// Token klienta (RESPONDENT) — ustalany niżej z URL ?t= / localStorage / legacy (Tor B magic-link).
 
 // Sekret admina NIE jest zaszyty w stronie — podajesz go w URL: ?view=admin&token=<sekret>.
 // Autoryzację robi serwer (RPC waliduje token); strona przekazuje tylko to, co w URL.
 const params     = new URLSearchParams(location.search);
+// ── Token klienta (Tor B): z URL ?t=<token> → localStorage → legacy 'jordaszka' (overlap) ──
+// Magic-link: token NIE jest zaszyty w bundlu (poza okresem przejściowym). Link osobisty:
+// …/?t=<token>. Fallback legacy do usunięcia w follow-up po migracji Dominiki (Faza C).
+const CLIENT_LS = 'eventomat_client_token';
+let RESPONDENT = params.get('t') || '';
+if (RESPONDENT) { try { localStorage.setItem(CLIENT_LS, RESPONDENT); } catch {} }
+else { try { RESPONDENT = localStorage.getItem(CLIENT_LS) || ''; } catch {} }
+if (!RESPONDENT) RESPONDENT = 'jordaszka';
 // ── Tryb widoku ──────────────────────────────────────────────────────────────
 // Problem: ikona dodana do ekranu głównego startuje z manifestu (start_url './'),
 // więc gubi ?view=admin&token=… → portal otwierał się jako klient. Rozwiązanie:
