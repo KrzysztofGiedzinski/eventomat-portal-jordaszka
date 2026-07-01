@@ -1,3 +1,10 @@
+// ── Anti-clickjacking (framebuster) ──────────────────────────────────────────
+// frame-ancestors nieosiągalne w meta-CSP na GitHub Pages (patrz REJESTR-ADVISORY).
+// Same-origin → mieści się w script-src 'self'. W ramce: ukryj i wybij z niej.
+if (window.top !== window.self) {
+  try { document.documentElement.style.display = 'none'; } catch (e) {}
+  try { window.top.location = window.self.location; } catch (e) {}
+}
 // ── Konfiguracja ──────────────────────────────────────────────────────────────
 const SUPABASE_URL  = 'https://svhrrwqbajyflvnspuda.supabase.co';
 const SUPABASE_ANON = 'sb_publishable__q1Op2Wc8lk-HEsGUOhCYg_U8jTUNyg';
@@ -115,7 +122,7 @@ function renderCard(msg, answers, delay) {
   el.className = 'card k-' + msg.kind;
   el.style.animationDelay = delay + 'ms';
   el.innerHTML =
-    `<div class="kicker ${msg.kind}">${KIND_LABEL[msg.kind] || 'Wpis'}</div>` +
+    `<div class="kicker ${esc(msg.kind)}">${KIND_LABEL[msg.kind] || 'Wpis'}</div>` +
     `<div class="q-title">${esc(msg.title)}</div>` +
     (msg.body ? `<p class="q-intro">${esc(msg.body)}</p>` : '') +
     (msg.rec ? `<div class="rec"><b>Moja propozycja</b>${esc(msg.rec)}</div>` : '');
@@ -180,7 +187,7 @@ function renderPortal(feed, answers) {
       const r = RECIP[msg.recipient];
       if (r) {
         const sh = document.createElement('div'); sh.className = 'section-head';
-        sh.innerHTML = `<div class="chip ${msg.recipient}">${r.icon}</div><div><h2>${r.name}</h2><p>${r.sub}</p></div>`;
+        sh.innerHTML = `<div class="chip ${esc(msg.recipient)}">${r.icon}</div><div><h2>${r.name}</h2><p>${r.sub}</p></div>`;
         root.appendChild(sh);
       }
     } else if (msg.recipient === 'oboje') { lastRecip = null; }
