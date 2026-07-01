@@ -5,7 +5,10 @@ const SUPABASE_ANON = 'sb_publishable__q1Op2Wc8lk-HEsGUOhCYg_U8jTUNyg';
 
 // Sekret admina NIE jest zaszyty w stronie — podajesz go w URL: ?view=admin&token=<sekret>.
 // Autoryzację robi serwer (RPC waliduje token); strona przekazuje tylko to, co w URL.
+// Scala paramy z query (?) i fragmentu (#); fragment wygrywa. Backward-compat: ?t= nadal działa.
+// MIRROR kontraktu eventomat-app/src/lib/portal-params.ts (DŁUG-22 — token bearer poza query).
 const params     = new URLSearchParams(location.search);
+new URLSearchParams(location.hash.slice(1)).forEach((v, k) => params.set(k, v));
 // ── Token klienta (Tor B magic-link): z URL ?t=<token> → localStorage. ──
 // Token NIE jest w bundlu. Link osobisty: …/?t=<token>. Bez tokenu = brak dostępu
 // (legacy 'jordaszka' zrotowany i zdezaktywowany — Faza C zakończona 2026-06-24).
