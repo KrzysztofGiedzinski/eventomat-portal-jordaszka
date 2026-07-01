@@ -42,6 +42,10 @@ if (params.get('view') === 'admin') {
 let deviceIsOwner = false;
 try { deviceIsOwner = !!localStorage.getItem(ADMIN_LS); } catch {}
 const VISIT_SOURCE = (deviceIsOwner || params.get('preview') === '1') ? 'owner' : 'client';
+// DŁUG-22: po odczycie tokenu z URL zdejmij fragment (#t=) z widocznego adresu —
+// token żyje już w localStorage. Usuwa go z paska adresu/historii/zakładek/„kopiuj link"
+// na tym urządzeniu. Zostawiamy query (?view=/?preview=, legacy ?t=) bez zmian.
+try { history.replaceState(null, '', location.pathname + location.search); } catch {}
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
 const root = document.getElementById('root');
